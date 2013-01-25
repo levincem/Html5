@@ -1,0 +1,499 @@
+<!doctype html>
+<html lang="fr">
+<head>
+    <meta charset="utf-8" />
+    <title>Html5 Experience !</title>
+    <style>
+      body { text-align: center; }
+      canvas { background: transparent; }
+    </style>
+<script language="javascript" type="application/javascript" src="http://ajax.googleapis.com/ajax/libs/jquery/1.4.2/jquery.min.js"></script>
+<script language="javascript" type="application/javascript" src="http://ajax.googleapis.com/ajax/libs/jqueryui/1.8.6/jquery-ui.min.js"></script>
+<script src="jaws.js"></script>
+</head>
+<body>
+<div id="container" style="width:810px; margin:auto;">
+	<div style="float:left;width:640px;">
+	  <canvas id="gameCanvas" width="640" height="640">
+		Votre navigateur n'est pas compatible !
+	  </canvas>
+	</div>
+	<div style="float:left;text-align:left;margin-left:20px;width:150px;">
+	  <div id="score"></div>
+	  <div id="lives"></div>
+	  <div id="live_info"></div>
+	</div>
+</div>
+
+<script>
+
+function parseMap(lvlstring) {
+    lines = lvlstring.split("\n");
+    $.each(lines, function (y, line) {
+        for (var x = 0; x < line.length; x++) {
+            chr = line[x];
+            if (chr == 'c') {
+                gameMap[x][y] = 'c';
+            } else if (chr == '#') {
+                gameMap[x][y] = 'r';
+            } else if (chr == 'D') {
+                gameMap[x][y] = 'rd';
+				posInitiale = [];
+				posInitiale.push(x * 32);
+				posInitiale.push(y * 32);
+            } else if (chr == '-') {
+                gameMap[x][y] = '-';
+            } else if (chr == 'A') {
+                gameMap[x][y] = 'A';
+				posFinale = [];
+				posFinale.push(x * 32);
+				posFinale.push(y * 32);
+            } else if (chr == 'N') {
+                gameMap[x][y] = undefined;
+            } else if (chr == '.') {
+                gameMap[x][y] = undefined;
+            } else {
+                console.log('Invalid chr ' + chr + ' at ' + x + 'x' + y + ' in line: ' + line);
+            }
+        }
+    });
+}
+function getTime() {
+    return (new Date()).getTime();
+}
+function randomChoice(arr) {
+    return arr[Math.floor(Math.random() * arr.length)];
+}
+function arrayWithout(arr, value) {
+    u = [];
+    $.each(arr, function (i, o) {
+        if (o != value) {
+            u.push(o);
+        }
+    });
+    return u;
+}
+
+
+var map = [];
+var mapData = [];
+map.push(".......D............");
+map.push(".......#............");
+map.push(".......######.......");
+map.push("............#.......");
+map.push("..###########.......");
+map.push("..#.................");
+map.push("..#.................");
+map.push("..######..#######...");
+map.push(".......#..#.....#...");
+map.push(".......#..#.....#...");
+map.push(".......####.....##..");
+map.push("............###..#..");
+map.push("............#.#..#..");
+map.push(".......######.####..");
+map.push(".......#............");
+map.push(".......#............");
+map.push(".......#............");
+map.push(".......#............");
+map.push(".......#............");
+map.push(".......A............");
+mapData['test'] = map.join("\n");
+//console.log(map);
+
+var mapSize = 20; // nb de cases largeur et hauteur
+
+var c = document.getElementById("gameCanvas");
+var dim;
+var posInitiale = [];
+var posFinale = [];
+var direction = 1;
+var creeps = [];
+var positions = [];
+var compteur = 0;
+var nbCreep = 0;
+var directions = [];
+var creepSpeed = 2;
+var live_info = document.getElementById("live_info");
+var anim;
+var tile_map;
+var score = 0;
+
+(function() {
+
+  function GameState ()
+  {
+	var sprites = new jaws.SpriteList();
+	var towers = [];
+	var bullets = new jaws.SpriteList();
+	var vers_degre=180/Math.PI;
+	var lives = 20;
+	var collisions = [];
+	
+	this.setup = function()
+	{
+		//anim = new jaws.Animation({sprite_sheet: "assets/droid_11x15.png", frame_size: [11,15], frame_duration: 100});
+		anim = new jaws.Animation({sprite_sheet: "assets/skeleton_walk.png", frame_size: [128,128], frame_duration: 5, orientation: "down"});
+	    gameMap = new Array(mapSize);
+		for (var i = 0; i < mapSize; i++) {
+			gameMap[i] = new Array(mapSize);
+		}
+		parseMap(mapData['test']);
+		jaws.context.mozImageSmoothingEnabled = false;  // non-blurry, blocky retro scaling
+		//jaws.preventDefaultKeys(["up", "down", "left", "right", "space"]);
+		var ctx = c.getContext("2d");
+		//construction du terrain
+		blocks = new jaws.SpriteList();
+		for (var x = 0; x < mapSize; x++) {
+			for (var y = 0; y < mapSize; y++) {
+				p = [x, y];
+				if (gameMap[x][y] === 'rd') {
+					ctx.fillStyle = "rgb(24,24,24)";
+					ctx.fillRect((p[0]) * 32, (p[1]) * 32, 31, 31);
+				}
+				if (gameMap[x][y] === '' || gameMap[x][y] === null || gameMap[x][y] === undefined) {
+					blocks.push( new jaws.Sprite({image: "assets/grass.png", x: (p[0]) * 32, y: (p[1]) * 32}) );
+				}
+				if (gameMap[x][y] === 'r') {
+					//ctx.fillStyle = "rgb(190, 250 ,150)";
+					//ctx.fillRect((p[0]) * 32, (p[1]) * 32, 31, 31);
+				}
+			}
+		}
+		
+		//console.log(gameMap);
+		
+		//ajout d'une tour statique
+		var x = parseInt(32*14);
+		var y = parseInt(32*10);
+		var tower = new jaws.Sprite({anchor: "center center", x: x, y: y});
+		tower.setImage("assets/ShipR.png");
+		tower.scale = 1;
+		tower.resizeTo(32,32);
+		tower.left_offset = 0;
+		tower.right_offset = 0;
+		tower.top_offset = 0;
+		tower.bottom_offset = 0;
+		tower.range = 5 * 32;
+		tower.power = 10;
+		tower.rotateTo(0);
+		towers.push(tower);
+		
+		
+		tile_map = new jaws.TileMap({size: [20, 20], cell_size: [32,32]});
+		tile_map.push(blocks);
+	}
+	
+	this.update = function()
+	{
+		compteur++;
+		var hasShot = false;
+		if(compteur % 12 == 0 && sprites.length < 50)
+		{
+
+
+
+			var x = parseInt(posInitiale[0]);
+			var y = parseInt(posInitiale[1]);
+			var sprite = new jaws.Sprite({anchor: "center center", x: x, y: y});
+			
+			sprite.anim_default = anim.slice(0,5);
+			sprite.anim_up = anim.slice(6,8);
+			sprite.anim_down = anim.slice(8,10);
+			sprite.anim_left = anim.slice(10,12);
+			sprite.anim_right = anim.slice(12,14);
+			sprite.setImage( anim.next() );
+			sprite.scale = 10;
+			sprite.resizeTo(28,28);
+			sprite.speed = 1.5*(Math.random()+0.5);
+			//sprite.vx = Math.random() * 0.5 - 1;
+			//sprite.vy = Math.random() * 0.5 - 1;
+			sprite.left_offset = 0;
+			sprite.right_offset = 0;
+			sprite.top_offset = 0;
+			sprite.bottom_offset = 0;
+			sprite.direction = 1;
+			sprite.life = 20;
+			sprites.push(sprite);
+		}
+		
+		
+		//console.log(sprites);
+		sprites.forEach(function(sprite, index) {
+			//console.log(sprite);
+			sprite.collision = false
+			sprite.setImage( anim.next() )
+			//console.log(creeps);
+			positions[index] = { x: sprite.x, y: sprite.y };
+
+			var xord = [Math.floor((sprite.x) / 32), Math.floor((sprite.y) / 32)];
+			//console.log(xord);
+			if(sprite.direction === undefined)
+			{
+				sprite.direction = 1;
+			}
+			if (sprite.direction === 0) {
+				sprite.setImage( anim.next() );
+				sprite.vx = sprite.speed;
+				sprite.vy = 0;
+			}
+			if (sprite.direction === 1) {
+				sprite.setImage( anim.next() );
+				sprite.vx = 0;
+				sprite.vy = sprite.speed;
+			}
+			if (sprite.direction === 2) {
+				sprite.setImage( anim.next() );
+				sprite.vx = -sprite.speed;
+				sprite.vy = 0;
+			}	
+			if (sprite.direction === 3) {
+				sprite.setImage( anim.next() );
+				sprite.vx = 0;
+				sprite.vy = -sprite.speed;
+			}
+			//console.log(sprite.rect());
+			sprite.move(sprite.vx, sprite.vy);
+			sprite.left_offset = 0;
+			sprite.right_offset = 0;
+			sprite.top_offset = 0;
+			sprite.bottom_offset = 0;
+
+			var cord = [Math.floor((sprite.x) / 32), Math.floor((sprite.y) / 32)];
+			var block = gameMap[cord[0]][cord[1]];
+
+
+			if(tile_map.atRect(sprite.rect()).length > 0) { 
+				sprite.left_offset = 0;
+				sprite.right_offset = 0;
+				sprite.top_offset = 0;
+				sprite.bottom_offset = 0;
+				//console.log(sprite);
+				//console.log(sprite.rect());
+				//fdsdfs
+				if (sprite.direction === 0) {
+					sprite.vx = -sprite.speed;
+					sprite.vy = 0;
+				}
+				else if (sprite.direction === 1) {
+					sprite.vx = 0;
+					sprite.vy = -sprite.speed;
+				}
+				else if (sprite.direction === 2) {
+					sprite.vx = sprite.speed;
+					sprite.vy = 0;
+				}
+				else if (sprite.direction === 3) {
+					sprite.vx = 0;
+					sprite.vy = sprite.speed;
+				}
+				sprite.move(sprite.vx, sprite.vy);
+				
+				var possibleDirections = [];
+				if (tile_map.cell([xord[0] + 1],[xord[1]]).length == 0) {
+					possibleDirections.push(0);
+				}
+				if (gameMap[xord[0]][xord[1] + 1] == 'r') {
+					possibleDirections.push(1);
+				}
+				if (gameMap[xord[0] - 1][xord[1]] == 'r') {
+					possibleDirections.push(2);
+				}
+				if (gameMap[xord[0]][xord[1] - 1] == 'r') {
+					possibleDirections.push(3);
+				}
+				newPossibleDirections = arrayWithout(possibleDirections, ((sprite.direction + 2) % 4));
+				sprite.direction = randomChoice(newPossibleDirections);
+			}
+			
+			if(!hasShot)
+			{
+				var distance = Math.sqrt((towers[0].x - sprite.x) * (towers[0].x - sprite.x) + (towers[0].y - sprite.y) * (towers[0].y - sprite.y));
+				if(distance < towers[0].range)
+				{
+					
+					//angle=Math.round((Math.atan((towers[0].y-sprite.y)/(towers[0].x-sprite.x))*vers_degre*1000)/1000);
+					towers[0].left_offset = 0;
+					towers[0].right_offset = 0;
+					towers[0].top_offset = 0;
+					towers[0].bottom_offset = 0;
+					//console.log(angle);
+					var direction_x = (sprite.x-towers[0].x) / distance * 30;
+					var direction_y = (sprite.y-towers[0].y) / distance * 30;
+					//console.log(distance);
+					var bullet = new jaws.Sprite({anchor: "center center", x: towers[0].x, y: towers[0].y});
+					bullet.setImage("assets/BallR.png");
+					bullet.scale = 1;
+					bullet.resizeTo(8,8);
+					bullet.speed = 5*(Math.random()+0.5);
+					//sprite.vx = Math.random() * 0.5 - 1;
+					//sprite.vy = Math.random() * 0.5 - 1;
+					bullet.left_offset = 0;
+					bullet.right_offset = 0;
+					bullet.top_offset = 0;
+					bullet.bottom_offset = 0;
+					bullet.vx = direction_x;
+					bullet.vy = direction_y;
+					bullet.damage = towers[0].power * (Math.random()+1);
+					bullets.push(bullet);
+					hasShot = true;
+				}
+				
+			}
+			//console.log(hasShot);
+		});
+
+		bullets.forEach(function(bullet, index) {
+			bullet.move(bullet.vx, bullet.vy);
+			bullet.left_offset = 0;
+			bullet.right_offset = 0;
+			bullet.top_offset = 0;
+			bullet.bottom_offset = 0;
+			if(jaws.isOutsideCanvas(bullet))
+			{
+				bullets.remove(bullet);
+			}
+		});
+		collisions = new Array();
+		sprites.forEach(function(sprite, index) {
+			var collision = jaws.collideOneWithMany(sprite, bullets);
+			if(collision.length > 0)
+			{
+				collisions[index] = collision;
+				sprite.life -= collisions[index].length * 1;
+
+				for (var i=0; i < collisions[index].length; i++)
+				{
+					bullets.remove(collisions[index][i]);
+				}
+				if(sprite.life <= 0)
+				{
+					sprites.remove(sprite);
+					score += 10;
+				}
+
+			}
+
+			if(jaws.isOutsideCanvas(sprite))
+			{
+				sprites.remove(sprite);
+				lives -= 1;
+				//console.log(lives);
+			}
+		});
+			
+		if(lives <= 0)
+		{
+			//console.log('Perdu');
+			jaws.switchGameState(LostState);
+		}
+
+		if(collisions.length > 0)
+		{
+			//console.log(collisions);
+		}
+		live_info.innerHTML = jaws.game_loop.fps + " fps.";
+		$('#lives').html(lives + " vies restantes.");
+		$('#score').html(score + " points");
+	}
+	
+	this.draw = function()
+	{
+		var ctx = c.getContext("2d");
+		if(collisions.length > 0)
+		{
+			//console.log(collisions);
+		}
+		jaws.context.clearRect(0, 0, jaws.width, jaws.height);
+		blocks.draw();
+		sprites.forEach(function(sprite, index) {
+			sprite.draw();
+			
+			var green = 0;
+			green = 100 * sprite.life / 20;
+			
+			ctx.fillStyle = "rgb(255,0,0)";
+			ctx.fillRect(sprite.x, sprite.y - 10 , 30, 8);
+			
+			ctx.fillStyle = "rgb(0,255,0)";
+			ctx.fillRect(sprite.x, sprite.y - 10, Math.floor(green * 30 / 100), 8);
+
+
+
+		});
+		towers.forEach(function(tower, index) {
+			tower.draw();
+		});
+		bullets.forEach(function(bullet, index) {
+			bullet.draw();
+		});
+		
+		for (var x = 0; x < mapSize; x++) {
+			for (var y = 0; y < mapSize; y++) {
+				p = [x, y];
+				if (gameMap[x][y] === 'rd') {
+					ctx.fillStyle = "rgb(24,24,24)";
+					ctx.fillRect((p[0]) * 32, (p[1]) * 32, 32, 32);
+				}
+				if (gameMap[x][y] === 'A') {
+					ctx.fillStyle = "rgb(190, 250 ,150)";
+					ctx.fillRect((p[0]) * 32, (p[1]) * 32, 32, 32);
+				}
+			}
+		}
+		for (var i=0; i<collisions.length; i++)
+		{
+			if(typeof(collisions[i]) != 'undefined')
+			{
+				for (var j=0; j<collisions[i].length; j++)
+				{
+					//console.log(collisions[i][j]);
+					if(typeof(collisions[i][j]) != 'undefined')
+					{
+						for (var k=0; k<10; k++)
+						{
+							ctx.fillStyle = "rgb("+Math.floor(200+(55*Math.random()))+", "+ Math.floor(150+(40*Math.random()))+" ,0)";
+							ctx.fillRect(collisions[i][j].rect().x + ( k * Math.random() ), collisions[i][j].rect().y + ( k * Math.random() ), 3 + (Math.random() * k), 3 + (Math.random() * k));
+						}
+					}
+				}
+			}
+		}
+	  }
+  }
+
+  window.onload = function()
+  {
+	jaws.assets.add("assets/ShipR.png");
+	jaws.assets.add("assets/BallR.png");
+	jaws.assets.add("assets/droid_11x15.png")
+	jaws.assets.add("assets/grass.png")
+	jaws.assets.add("assets/skeleton_walk.png")
+	jaws.start(GameState);
+  }
+  
+	function LostState ()
+	{
+
+		this.setup = function()
+		{
+			
+		}
+		this.update = function()
+		{
+			
+		}
+		this.draw = function()
+		{
+			var ctx = c.getContext("2d");
+			ctx.font = "60px Arial";
+			ctx.fillStyle = "#000";  
+			ctx.fillRect(0, 250, 640, 100);
+			
+			ctx.fillStyle = "#ED5B17";  
+			ctx.fillText("Perdu ! - " + score + " points", 60, 320); 
+		}
+	}
+})();
+</script>
+</body>
+</html>
